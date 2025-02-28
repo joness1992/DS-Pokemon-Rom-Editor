@@ -45,6 +45,7 @@ namespace DSPRE {
 
         #region Variables
         public bool iconON = false;
+        private bool _forceHardRefresh;
 
         /* Editors Setup */
         public bool matrixEditorIsReady { get; private set; } = false;
@@ -66,6 +67,17 @@ namespace DSPRE {
         #endregion
 
         #region Subroutines
+        private void MainProgram_Shown(object sender, EventArgs e) {
+            // Read command line arguments
+            string[] args = Environment.GetCommandLineArgs();
+            if (args.Length > 1) {
+                // First argument must be the ROM file
+                if (File.Exists(args[1])) {
+                    _forceHardRefresh = args.Contains("--forceRefresh");
+                    LoadRom(args[1]);
+                }
+            }
+        }
         private void MainProgram_FormClosing(object sender, FormClosingEventArgs e) {
             if (MessageBox.Show("Are you sure you want to quit?", "Exit", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.No) {
                 e.Cancel = true;
@@ -535,10 +547,15 @@ namespace DSPRE {
                 return;
             }
 
-            SetupROMLanguage(openRom.FileName);
+            LoadRom(openRom.FileName);
+        }
+
+        private void LoadRom(string filepath)
+        {
+            SetupROMLanguage(filepath);
             /* Set ROM gameVersion and language */
-            romInfo = new RomInfo(gameCode, openRom.FileName, useSuffix: true);
-            Helpers.romInfo = new RomInfo(gameCode, openRom.FileName, useSuffix: true);
+            romInfo = new RomInfo(gameCode, filepath, useSuffix: true);
+            Helpers.romInfo = new RomInfo(gameCode, filepath, useSuffix: true);
 
             if (string.IsNullOrWhiteSpace(RomInfo.romID) || string.IsNullOrWhiteSpace(RomInfo.fileName)) {
                 return;
@@ -546,7 +563,8 @@ namespace DSPRE {
 
             CheckROMLanguage();
 
-            int userchoice = UnpackRomCheckUserChoice();
+            int userchoice = _forceHardRefresh ? 1 : UnpackRomCheckUserChoice(); // if hard refresh is true then automatically delete existing data
+            _forceHardRefresh = false; // Reset variable
             switch (userchoice) {
                 case -1:
                     Helpers.statusLabelMessage("Loading aborted");
@@ -560,7 +578,8 @@ namespace DSPRE {
                     if (userchoice == 1) {
                         Helpers.statusLabelMessage("Deleting old data...");
                         try {
-                            Directory.Delete(RomInfo.workDir, true);
+                            if (Directory.Exists(RomInfo.workDir))
+                                Directory.Delete(RomInfo.workDir, true);
                         } catch (IOException) {
                             MessageBox.Show("Concurrent access detected: \n" + RomInfo.workDir +
                                 "\nMake sure no other process is using the extracted ROM folder while DSPRE is running.", "Concurrent Access", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -570,7 +589,7 @@ namespace DSPRE {
                     }
 
                     try {
-                        if (!UnpackRom(openRom.FileName)) {
+                        if (!UnpackRom(filepath)) {
                             Helpers.statusLabelError("ERROR");
                             languageLabel.Text = "";
                             versionLabel.Text = "Error";
